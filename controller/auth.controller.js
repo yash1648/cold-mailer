@@ -1,5 +1,4 @@
 import User from "../model/auth.model.js";
-import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 export const registerUser= async(req,res) => {
@@ -63,10 +62,9 @@ export const loginUser=async(req,res)=>{
     if(!isMatch){
         return res.status(400).json({message:"Invalid password",success:false})
     }
-
     const token=jwt.sign({
         userId:user._id},
-        
+        process.env.JWT_SECRET
         )
 
     return res.status(200).json({
