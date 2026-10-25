@@ -14,7 +14,7 @@ const fileSchema = new mongoose.Schema({
         ref:'User',
         required:true
     },
-})
+}, { timestamps: true });
 
 const File=mongoose.model('File',fileSchema);
 export default File;

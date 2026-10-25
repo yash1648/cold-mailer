@@ -11,7 +11,7 @@ export const generateEmails = async (req, res) => {
       _id: extractionId,
       createdBy: req.user._id,
     });
-    if (!extraction) {w
+    if (!extraction) {
       return res.status(404).json({
         message: "Extraction not found",
       });
@@ -20,7 +20,7 @@ export const generateEmails = async (req, res) => {
     const studentProfile = {
       name: user.name,
       email: user.email,
-      role: user.role,
+      role: user.domain || user.role || "Job Applicant",
       skills: user.skills,
     };
     const emails = await generateColdEmails(extraction.data, studentProfile);
@@ -60,6 +60,7 @@ export const getMyEmails = async (req, res) => {
     }).sort({ createdAt: -1 });
     res.status(200).json({
       success: true,
+      emails,
     });
   } catch (error) {
     res.status(500).json({
@@ -182,7 +183,7 @@ export const sendMail = async (req, res) => {
     const resume = await File.findOne({
       createdBy: req.user._id,
     }).sort({ createdAt: -1 });
-    await sendEmail(recipient, email.subject, email.body, resume?.fileURL);
+    await sendEmail(recipient, email.subject, email.body, resume?.fileUrl || resume?.fileURL);
     await Mail.deleteMany({
       createdBy: req.user._id,
       _id: { $ne: emailId },

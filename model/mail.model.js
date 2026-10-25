@@ -18,6 +18,12 @@ const coldMailSchema = new mongoose.Schema(
       required: true,
     },
 
+    recipientEmail: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
