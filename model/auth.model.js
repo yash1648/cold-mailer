@@ -25,9 +25,18 @@ const userSchema= new mongoose.Schema({
     skills:[{
         type:String,
         trim:true
+    }],
+    files:[{
+        type:mongoose.Schema.Types.ObjectId,
+        ref:"File",
+        required:true
+    }],
+    mails:[{
+        type:mongoose.Schema.Types.ObjectId,
+        ref:"Mail",
+       
     }]
 }, {timestamps:true})
-
 
 const User=mongoose.model("User",userSchema)
 export default User
