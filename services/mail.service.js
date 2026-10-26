@@ -1,106 +1,92 @@
-import { extractWithNvidia } from "../utils/ai.utils.js";
-export const generateColdEmails = async (
-  companyDetails,
-  studentProfile = {},
-) => {
-  // Extract recruitment opportunity details (from recruitment image/post)
-  const hrEmail = companyDetails.recruiter_email || "Not specified";
-  const jobRole = companyDetails.job_role || "Open Role";
-  const company = companyDetails.company || "the company";
-  const recruiterName = companyDetails.recruiter_author_name || "Hiring Team";
-  // Extract candidate profile details (from DB/registration)
-  const candidateRole = studentProfile.role || "Job Applicant";
-  const candidateSkills = Array.isArray(studentProfile.skills)
-    ? studentProfile.skills.join(", ")
-    : studentProfile.skills || "Relevant skills";
-  const candidateName = studentProfile.name || "Candidate";
-  const prompt = `
-You are an expert cold email writer helping job seekers write highly effective, personalized
-cold emails to recruiters.
-RECRUITMENT OPPORTUNITY (EXTRACTED FROM RECRUITMENT POST /
-IMAGE):
-- HR / Recruiter Email: ${hrEmail}
-- Target Job Role: ${jobRole}
-- Company: ${company}
-- Recruiter Name: ${recruiterName}
-- Details:
-${JSON.stringify(companyDetails, null, 2)} CANDIDATE PROFILE (FROM DATABASE):
-- Candidate Name: ${candidateName}
-- Candidate Role: ${candidateRole}
-- Candidate Skills: ${candidateSkills}
-- Profile Details:
-${JSON.stringify(studentProfile, null, 2)}
+import { callModel } from "../utils/ai.utils.js";
+import { parseJsonFromModel } from "../utils/json.utils.js";
+
+const orFallback = (value, fallback) => {
+    if (value === null || value === undefined) return fallback;
+    const text = String(value).trim();
+    return text ? text : fallback;
+};
+
+const listText = (value) => (Array.isArray(value) ? value.filter(Boolean).join(", ") : "");
+
+const buildPrompt = (companyDetails, candidate) => `
+You are an expert cold email writer helping a job seeker write personalized emails to recruiters.
+
+RECRUITMENT OPPORTUNITY (extracted from a recruitment post, verbatim; null means unknown):
+- Recruiter email: ${companyDetails.recruiter_email ?? "unknown"}
+- Recruiter name: ${companyDetails.recruiter_name ?? "unknown"}
+- Company: ${companyDetails.company ?? "unknown"}
+- Target job role: ${companyDetails.job_role ?? "unknown"}
+- Skills requested by the recruiter: ${listText(companyDetails.required_skills) || "unknown"}
+- Original post text: ${companyDetails.post_content ?? "unknown"}
+
+CANDIDATE PROFILE (from the database):
+- Name: ${candidate.name}
+- Current role/domain: ${candidate.role}
+- Email: ${candidate.email}
+- Skills: ${candidate.skills || "not provided"}
+
 TASK:
-Write personalized cold emails from the candidate (${candidateName}, role:
-"${candidateRole}") applying for the target role ("${jobRole}") at ${company}, addressing
-the recruiter / HR (email: ${hrEmail}).
-Pitch the candidate by strongly highlighting how their current Role ("${candidateRole}") and
-Skills (${candidateSkills}) directly align with the requirements of the Job Role
-("${jobRole}").
-Generate exactly 3 personalized cold emails.
-EMAIL 1: Professional
-- Formal and professional.
-- Suitable for contacting a recruiter directly.
-EMAIL 2: Concise
-- Short and direct.
-- Focus on the relevant opportunity, role match, and skills.
-EMAIL 3: Networking-friendly
-- Friendly and conversational.
-- Focus on starting a professional connection while expressing genuine interest in the role.
+Write exactly 3 cold emails from the candidate applying for the target role.
+EMAIL 1: Professional - formal, suitable for contacting a recruiter directly.
+EMAIL 2: Concise - short and direct, focused on role match and relevant skills.
+EMAIL 3: Networking-friendly - friendly and conversational, focused on starting a professional connection.
+
 RULES:
-1. Use the company information and target Job Role ("${jobRole}").
-2. Match the candidate's actual Role and Skills with the company and role requirements.
-3. Never invent skills, experience, projects, or qualifications not provided.
-4. Never invent fake recruiter names or email addresses.
-5. If information is missing, do not guess.
-6. Give each email a different subject and body.
-7. Return only valid JSON without Markdown.
+1. Address the recruiter by name only when a name was provided; otherwise use a neutral greeting.
+2. Use the real company and job role when provided. If a value is unknown, keep the wording general instead of inventing it.
+3. Match the candidate's actual role and skills to the role. Never invent skills, experience, projects, degrees, or achievements.
+4. Never invent recruiter names, companies, or email addresses. Do not claim to have followed, used, or admired the company's products, and do not mention company projects or culture: none of that was provided.
+5. Each email must have a different subject and a different body.
+6. Keep each body under 170 words, written as plain text with paragraph breaks.
+7. Return only valid JSON with no Markdown fences.
+
 Use this exact JSON structure:
 {
- "emails": [
- { "type": "Professional",
- "subject": "Email subject",
- "body": "Email body"
- },
- {
- "type": "Concise",
- "subject": "Email subject",
- "body": "Email body"
- },
- {
- "type": "Networking-friendly",
- "subject": "Email subject",
- "body": "Email body"
- }
- ]
+  "emails": [
+    { "type": "Professional", "subject": "Email subject", "body": "Email body" },
+    { "type": "Concise", "subject": "Email subject", "body": "Email body" },
+    { "type": "Networking-friendly", "subject": "Email subject", "body": "Email body" }
+  ]
 }
-`;
-  const aiResponse = await extractWithNvidia(prompt);
+`.trim();
 
-  let result;
-  try {
-    const cleanedResponse = aiResponse
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/i, "")
-      .replace(/\s*```$/, "")
-      .trim();
-    result = JSON.parse(cleanedResponse);
-  } catch (error) {
-    console.error("AI response could not be parsed:", aiResponse);
-    throw new Error("AI returned an invalid email format");
-  }
-  if (!Array.isArray(result.emails) || result.emails.length !== 3) {
-    throw new Error("AI did not generate exactly three emails");
-  }
-  for (const email of result.emails) {
-    if (
-      typeof email.subject !== "string" ||
-      !email.subject.trim() ||
-      typeof email.body !== "string" ||
-      !email.body.trim()
-    ) {
-      throw new Error("An email is missing its subject or body");
+export const generateColdEmails = async (companyDetails = {}, studentProfile = {}) => {
+    const candidate = {
+        name: orFallback(studentProfile.name, "the candidate"),
+        email: orFallback(studentProfile.email, ""),
+        role: orFallback(studentProfile.role, "Job Applicant"),
+        skills: listText(studentProfile.skills),
+    };
+
+    const aiResponse = await callModel(buildPrompt(companyDetails, candidate));
+
+    let result;
+    try {
+        result = parseJsonFromModel(aiResponse);
+    } catch (error) {
+        console.error("AI response could not be parsed:", aiResponse.slice(0, 500));
+        throw new Error("AI returned an invalid email format");
     }
-  }
-  return result.emails;
+
+    if (!Array.isArray(result.emails) || result.emails.length !== 3) {
+        throw new Error("AI did not generate exactly three emails");
+    }
+
+    for (const email of result.emails) {
+        if (
+            typeof email.subject !== "string" ||
+            !email.subject.trim() ||
+            typeof email.body !== "string" ||
+            !email.body.trim()
+        ) {
+            throw new Error("An email is missing its subject or body");
+        }
+    }
+
+    return result.emails.map((email, index) => ({
+        type: orFallback(email.type, `email-${index + 1}`),
+        subject: email.subject.trim(),
+        body: email.body.trim(),
+    }));
 };
